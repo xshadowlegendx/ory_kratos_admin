@@ -1,0 +1,34 @@
+defmodule OryKratosAdmin.Kratos do
+  @moduledoc """
+  The Kratos context.
+  """
+
+  import Ecto.Query, warn: false
+  alias OryKratosAdmin.Repo
+
+  alias OryKratosAdmin.Kratos.Identity
+
+  def list_identities(%{"page_size" => page_size, "page_number" => page_number} = filters) do
+    query =
+      Enum.reduce(filters, Identity, fn
+        {"identifier.contains", identifiers}, query ->
+          [iden, value] = String.split(identifiers, ",")
+
+          where(query, [idx], ilike(fragment("jsonb_extract_path(?, ?)::text", idx.traits, ^iden), ^"%#{value}%"))
+
+        _filter, query ->
+          query
+      end)
+
+    {
+      query |> limit(^page_size) |> offset(^(page_number * page_size)) |> Repo.all(),
+      query |> select(count()) |> Repo.one()
+    }
+  end
+
+  def create_identity(attrs) do
+    %Identity{}
+    |> Identity.changeset(attrs)
+    |> Repo.insert()
+  end
+end

@@ -1,0 +1,79 @@
+
+on:
+  release:
+    types:
+      - published
+  push:
+    branches:
+      - dev
+      - main
+  pull_request:
+    types:
+      - synchronize
+      - ready_for_review
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  lint-and-tests:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:18-alpine
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_DB: ory_kratos_admin_test
+          POSTGRES_PASSWORD: postgres
+    env:
+      MIX_ENV: test
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: '27'
+          elixir-version: '1.18.2'
+          install-hex: true
+          install-rebar: true
+
+      - run: mix deps.get
+
+      - run: mix credo
+
+      - run: mix coveralls.github
+
+  build-push-docker-image:
+    runs-on: ubuntu-24.04
+    needs:
+      - lint-and-tests
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: setup qemu
+        uses: docker/setup-qemu-action@v3
+      - name: setup docker buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: lowercase repo
+        id: lowercase_repo
+        run: echo -n "repo=$(tr '[:upper:]' '[:lower:]' <<< '${{ github.repository }}')" >> $GITHUB_OUTPUT
+
+      - name: login to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+        if: github.ref_name == 'dev' || github.ref_name == 'main' || (github.event_name == 'release' && github.event.action == 'published')
+
+      - name: build docker image
+        uses: docker/build-push-action@v6
+        with:
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.ref_name == 'dev' || github.ref_name == 'main' || (github.event_name == 'release' && github.event.action == 'published') }}
+          context: .
+          tags: ghcr.io/${{ steps.lowercase_repo.outputs.repo }}:${{ github.ref_name == 'dev' && 'dev' || github.ref_name == 'main' && 'latest' || github.ref_name }}
