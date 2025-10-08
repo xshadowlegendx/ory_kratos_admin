@@ -1,0 +1,17 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ory-kratos-admin
+  namespace: default
+data:
+  IS_DATABASE_USE_SSL: 'yes'
+  DATABASE_SSL_VERIFY_MODE: verify_none
+  DATABASE_HOST: ory-kratos-pg.ory.svc.cluster.local
+  DATABASE_NAME: ory_kratos_admin
+  POOL_SIZE: '16'
+
+  OTEL_SERVICE_NAME: ory-kratos-admin
+  OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://localhost:5081/api/default
+  OTEL_EXPORTER_OTLP_TRACES_PROTOCOL: http_protobuf
+  OTEL_EXPORTER_OTLP_TRACES_HEADERS: authorization=bearer token,organization=default

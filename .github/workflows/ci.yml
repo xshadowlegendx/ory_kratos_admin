@@ -50,6 +50,8 @@ jobs:
     runs-on: ubuntu-24.04
     needs:
       - lint-and-tests
+    outputs:
+      image_digest: ${{ steps.set_digest.outputs.digest }}
     steps:
       - uses: actions/checkout@v4
 
@@ -72,8 +74,127 @@ jobs:
 
       - name: build docker image
         uses: docker/build-push-action@v6
+        id: docker_build
         with:
           platforms: linux/amd64,linux/arm64
           push: ${{ github.ref_name == 'dev' || github.ref_name == 'main' || (github.event_name == 'release' && github.event.action == 'published') }}
           context: .
           tags: ghcr.io/${{ steps.lowercase_repo.outputs.repo }}:${{ github.ref_name == 'dev' && 'dev' || github.ref_name == 'main' && 'latest' || github.ref_name }}
+          outputs: type=registry
+
+      - name: Capture image digest or fallback
+        id: set_digest
+        run: |
+          echo "digest=${{ steps.docker_build.outputs.digest || 'not-pushed' }}" >> "$GITHUB_OUTPUT"
+
+  test-k8s:
+    runs-on: ubuntu-24.04
+    needs:
+      - build-push-docker-image
+    if: needs.build-push-docker-image.outputs.image_digest != 'not-pushed'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install kind
+        run: |
+          curl -Lo kind https://kind.sigs.k8s.io/dl/v0.30.0/kind-linux-$(arch | sed 's/x86_64/amd64/; s/aarch64/arm64/')
+          chmod +x kind
+          mv kind /usr/local/bin/
+
+      - name: install kubectl
+        run: |
+          curl -Lo /usr/local/bin/kubectl "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/$(arch | sed 's/x86_64/amd64/; s/aarch64/arm64/')/kubectl"
+
+      - run: kind create cluster --name ory-kratos-admin-test
+
+      - run: |
+          cat <<EOF > postgres.yml
+          # for testing only
+          ---  
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: ory-kratos-pg
+          spec:
+            selector:
+              matchLabels:
+                app: ory-kratos-pg
+            template:
+              metadata:
+                labels:
+                  app: ory-kratos-pg
+              spec:
+                containers:
+                - name: postgres
+                  image: postgres:18-alpine
+                  ports:
+                  - containerPort: 5432
+                  env:
+                  - name: POSTGRES_USER
+                    value: ory-kratos
+                  - name: POSTGRES_PASSWORD
+                    value: ory-kratos
+                  - name: POSTGRES_DB
+                    value: ory_kratos_admin
+
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: ory-kratos-pg
+          spec:
+            selector:
+              app: ory-kratos-pg
+            ports:
+            - port: 5432
+              targetPort: 5432
+          EOF
+
+          cat <<EOF > kustomization.yml
+          ---
+          apiVersion: kustomize.config.k8s.io/v1beta1
+          kind: Kustomization
+
+          resources:
+          - ./k8s/
+          - ./postgres.yml
+
+          images:
+          - name: ory-kratos-admin
+            digest: ${{ needs.build-push-docker-image.outputs.image_digest }}
+
+          configMapGenerator:
+          - name: ory-kratos-admin
+            behavior: merge
+            literals:
+            - DATABASE_HOST=ory-kratos-pg.default.svc.cluster.local
+
+          secretGenerator:
+          - name: ory-kratos-pg
+            literals:
+            - username=ory-kratos
+            - password=ory-kratos
+
+          - name: ory-kratos-admin
+            literals:
+            - SECRET_KEY_BASE=e5ZJzA8vur5aoatdAv1groUm521KzRh/jo5Y4fdkOyKWkV8ZCUHY892TLv/upFsQ
+          EOF
+
+      - run: |
+          kubectl apply -k .
+          kubectl wait --timeout=4m deployment/ory-kratos-admin --for=condition=Available
+
+      - run: |
+          set -euo pipefail
+          kubectl port-forward svc/ory-kratos-admin 8888:80 &
+          echo $! > .port-forward.pid
+          trap 'if [ -f .port-forward.pid ]; then kill $(cat .port-forward.pid); fi' EXIT
+          for i in {0..4}; do
+            if nc -z localhost 8888; then
+              break
+            fi
+            sleep 2
+          done
+          if [ "$(curl -s 'http://localhost:8888/api/identities?page_size=2&page_number=0')" != '[]' ]; then
+            exit 1
+          fi
