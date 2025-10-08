@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+
+cd -P -- "$(dirname -- "$0")"
+exec ./ory_kratos_admin eval OryKratosAdmin.Release.migrate
