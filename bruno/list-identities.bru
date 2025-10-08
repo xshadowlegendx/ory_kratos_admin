@@ -1,0 +1,21 @@
+meta {
+  name: list-identities
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/identities?page_size=2&page_number=0
+  body: none
+  auth: inherit
+}
+
+params:query {
+  page_size: 2
+  page_number: 0
+  ~identifier.contains: username,ad
+}
+
+settings {
+  encodeUrl: true
+}
