@@ -18,7 +18,7 @@ defmodule OryKratosAdmin.Kratos.Identity do
   @doc false
   def changeset(identity, attrs) do
     identity
-    |> cast(attrs, [:traits, :metadata_public, :metadata_admin, :schema_id])
+    |> cast(attrs, [:traits, :metadata_public, :metadata_admin, :schema_id, :created_at])
     |> validate_required([:schema_id])
   end
 end

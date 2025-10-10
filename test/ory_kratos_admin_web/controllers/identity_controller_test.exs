@@ -8,7 +8,7 @@ defmodule OryKratosAdminWeb.IdentityControllerTest do
   end
 
   describe "index" do
-    test "lists all identities", %{conn: conn} do
+    test "lists all identities with pagings", %{conn: conn} do
       conn = get(conn, ~p"/api/identities")
       assert ["0"] = get_resp_header(conn, "x-paging-total-count")
       assert json_response(conn, 200) == []
@@ -28,6 +28,31 @@ defmodule OryKratosAdminWeb.IdentityControllerTest do
       assert el["traits"] == %{"idx" => "fulala"}
       assert not is_nil(el["created_at"])
       assert not is_nil(el["updated_at"])
+    end
+
+    test "list identities with sort direction", %{conn: conn} do
+      %{identity: idx0} = create_identity(%{
+        traits: %{idx: "lala"},
+        created_at: DateTime.add(DateTime.utc_now(), 2, :day)
+      })
+
+      %{identity: idx1} = create_identity(%{
+        traits: %{idx: "lala"},
+        created_at: DateTime.add(DateTime.utc_now(), -2, :day)
+      })
+
+      %{identity: idx2} = create_identity(%{
+        traits: %{idx: "fefe"},
+        created_at: DateTime.add(DateTime.utc_now(), -4, :day)
+      })
+
+      conn = get(conn, ~p"/api/identities?sort_direction=asc")
+      res = json_response(conn, 200)
+      assert Enum.map(res, & &1["id"]) == [idx2.id, idx1.id, idx0.id]
+
+      conn = get(conn, ~p"/api/identities?sort_direction=desc")
+      res = json_response(conn, 200)
+      assert Enum.map(res, & &1["id"]) == [idx0.id, idx1.id, idx2.id]
     end
   end
 

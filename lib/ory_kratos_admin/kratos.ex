@@ -11,6 +11,9 @@ defmodule OryKratosAdmin.Kratos do
   def list_identities(%{"page_size" => page_size, "page_number" => page_number} = filters) do
     query =
       Enum.reduce(filters, Identity, fn
+        {"sort_direction", dir}, query when dir in ~w(asc desc) ->
+          order_by(query, [idx], {^:"#{dir}", idx.created_at})
+
         {"identifier.contains", identifiers}, query ->
           [iden, value] = String.split(identifiers, ",")
 
@@ -22,7 +25,7 @@ defmodule OryKratosAdmin.Kratos do
 
     {
       query |> limit(^page_size) |> offset(^(page_number * page_size)) |> Repo.all(),
-      query |> select(count()) |> Repo.one()
+      query |> exclude(:order_by) |> select(count()) |> Repo.one()
     }
   end
 
