@@ -54,6 +54,33 @@ defmodule OryKratosAdminWeb.IdentityControllerTest do
       res = json_response(conn, 200)
       assert Enum.map(res, & &1["id"]) == [idx0.id, idx1.id, idx2.id]
     end
+
+    test "list identites with metadata public filters", %{conn: conn} do
+      %{identity: idx0} = create_identity(%{
+        traits: %{idx: "sunge"},
+        metadata_public: %{lufi: %{fer: "abd"}}
+      })
+
+      %{identity: _idx} = create_identity(%{
+        traits: %{idx: "gerjin"},
+        metadata_public: %{lufi: %{fer: "ad"}}
+      })
+
+      %{identity: idx1} = create_identity(%{
+        traits: %{idx: "jinji"},
+        metadata_public: %{lung: 2, gin: "fork"}
+      })
+
+      conn = get(conn, ~p"/api/identities?metadata_public.contains.0=lufi.fer,ab")
+      res = json_response(conn, 200)
+      assert Enum.count(res) == 1
+      assert res |> hd() |> Map.get("id") == idx0.id
+
+      conn = get(conn, ~p"/api/identities?metadata_public.equals.0=lung,2&metadata_public.equals.1=gin,fork")
+      res = json_response(conn, 200)
+      assert Enum.count(res) == 1
+      assert res |> hd() |> Map.get("id") == idx1.id
+    end
   end
 
   defp create_identity(args) do

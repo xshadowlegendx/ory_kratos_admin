@@ -19,6 +19,16 @@ defmodule OryKratosAdmin.Kratos do
 
           where(query, [idx], ilike(fragment("jsonb_extract_path(?, ?)::text", idx.traits, ^iden), ^"%#{value}%"))
 
+        {"metadata_public.contains." <> _idx, paths_val}, query ->
+          [paths, value] = String.split(paths_val, ",")
+
+          where(query, [idx], ilike(fragment("jsonb_extract_path(?, variadic ?::text[])::text", idx.metadata_public, ^String.split(paths, ".")), ^"%#{value}%"))
+
+        {"metadata_public.equals." <> _idx, paths_val}, query ->
+          [paths, value] = String.split(paths_val, ",")
+
+          where(query, [idx], fragment("jsonb_extract_path_text(?, variadic ?::text[])", idx.metadata_public, ^String.split(paths, ".")) == ^value)
+
         _filter, query ->
           query
       end)
