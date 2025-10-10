@@ -5,7 +5,7 @@ meta {
 }
 
 get {
-  url: {{baseUrl}}/api/identities?page_size=2&page_number=0
+  url: {{baseUrl}}/api/identities?page_size=2&page_number=0&sort_direction=desc
   body: none
   auth: inherit
 }
@@ -13,6 +13,7 @@ get {
 params:query {
   page_size: 2
   page_number: 0
+  sort_direction: desc
   ~identifier.contains: username,ad
   ~metadata_public.contains.0: json.path.field,some-value
   ~metadata_public.equals.0: json.path.field,other-value
