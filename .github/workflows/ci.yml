@@ -7,6 +7,10 @@ on:
     branches:
       - dev
       - main
+    paths-ignore:
+      - bruno/**
+      - README.md
+      - .env.example
   pull_request:
     types:
       - synchronize
@@ -50,8 +54,6 @@ jobs:
     runs-on: ubuntu-24.04
     needs:
       - lint-and-tests
-    outputs:
-      image_digest: ${{ steps.set_digest.outputs.digest }}
     steps:
       - uses: actions/checkout@v4
 
@@ -80,20 +82,15 @@ jobs:
           push: ${{ github.ref_name == 'dev' || github.ref_name == 'main' || (github.event_name == 'release' && github.event.action == 'published') }}
           context: .
           tags: ghcr.io/${{ steps.lowercase_repo.outputs.repo }}:${{ github.ref_name == 'dev' && 'dev' || github.ref_name == 'main' && 'latest' || github.ref_name }}
-          outputs: type=registry
-
-      - name: Capture image digest or fallback
-        id: set_digest
-        run: |
-          echo "digest=${{ steps.docker_build.outputs.digest || 'not-pushed' }}" >> "$GITHUB_OUTPUT"
 
   test-k8s:
     runs-on: ubuntu-24.04
     needs:
-      - build-push-docker-image
-    if: needs.build-push-docker-image.outputs.image_digest != 'not-pushed'
+      - lint-and-tests
     steps:
       - uses: actions/checkout@v4
+
+      - run: docker image build -t ory-kratos-admin:test .
 
       - name: install kind
         run: |
@@ -105,12 +102,14 @@ jobs:
         run: |
           curl -Lo /usr/local/bin/kubectl "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/$(arch | sed 's/x86_64/amd64/; s/aarch64/arm64/')/kubectl"
 
-      - run: kind create cluster --name ory-kratos-admin-test
+      - run: |
+          kind create cluster --name ory-kratos-admin-test
+          kind load docker-image ory-kratos-admin:test --name ory-kratos-admin-test
 
       - run: |
           cat <<EOF > postgres.yml
           # for testing only
-          ---  
+          ---
           apiVersion: apps/v1
           kind: Deployment
           metadata:
@@ -136,6 +135,16 @@ jobs:
                     value: ory-kratos
                   - name: POSTGRES_DB
                     value: ory_kratos_admin
+                  readinessProbe:
+                    exec:
+                      command:
+                      - pg_isready
+                      - -U
+                      - postgres
+                    initialDelaySeconds: 4
+                    periodSeconds: 4
+                    timeoutSeconds: 4
+                    failureThreshold: 4
 
           ---
           apiVersion: v1
@@ -159,14 +168,30 @@ jobs:
           - ./k8s/
           - ./postgres.yml
 
+          patches:
+          - target:
+              kind: Deployment
+              name: ory-kratos-admin
+            patch: |
+              - op: add
+                path: /spec/template/spec/initContainers
+                value:
+                - name: wait-for-kratos-pg
+                  image: busybox
+                  command:
+                  - sh
+                  - -c
+                  - until nc -z ory-kratos-pg 5432; do echo sleep 2; done;
+
           images:
           - name: ory-kratos-admin
-            digest: ${{ needs.build-push-docker-image.outputs.image_digest }}
+            newTag: test
 
           configMapGenerator:
           - name: ory-kratos-admin
             behavior: merge
             literals:
+            - IS_DATABASE_USE_SSL=no
             - DATABASE_HOST=ory-kratos-pg.default.svc.cluster.local
 
           secretGenerator:
@@ -182,19 +207,22 @@ jobs:
 
       - run: |
           kubectl apply -k .
-          kubectl wait --timeout=4m deployment/ory-kratos-admin --for=condition=Available
+          kubectl wait --timeout=4m deployment ory-kratos-pg --for=condition=Available
+          kubectl wait --timeout=4m deployment ory-kratos-admin --for=condition=Available
+          kubectl get pods
+          kubectl describe svc ory-kratos-admin
 
       - run: |
           set -euo pipefail
-          kubectl port-forward svc/ory-kratos-admin 8888:80 &
-          echo $! > .port-forward.pid
-          trap 'if [ -f .port-forward.pid ]; then kill $(cat .port-forward.pid); fi' EXIT
+          trap 'if ss -tln | grep -q ":8888"; then kill $(ss -tpln | grep ":8888" | grep -Eo "pid=[0-9]+" | sed "s/pid=//"); fi' EXIT
           for i in {0..4}; do
-            if nc -z localhost 8888; then
-              break
+            if ! ss -ltn | grep -q ':8888'; then
+              kubectl port-forward svc/ory-kratos-admin 8888:80 &
+              sleep 2
             fi
-            sleep 2
+            if [ "$(curl -s 'http://localhost:8888/api/identities?page_size=2&page_number=0')" = '[]' ]; then
+              exit 0
+            fi
           done
-          if [ "$(curl -s 'http://localhost:8888/api/identities?page_size=2&page_number=0')" != '[]' ]; then
-            exit 1
-          fi
+          kubectl logs -l app=ory-kratos-admin
+          exit 1

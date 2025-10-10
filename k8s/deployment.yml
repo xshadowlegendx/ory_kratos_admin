@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: ory-kratos-admin
-        image: ghcr.io/xshadowlegendx/ory_kratos_admin:0.1.0
+        image: ory-kratos-admin
         command:
         - sh
         - -c
@@ -35,6 +35,9 @@ spec:
           containerPort: 4000
 
         env:
+        - name: PHX_SERVER
+          value: 'true'
+
         - name: DATABASE_USERNAME
           valueFrom:
             secretKeyRef:
