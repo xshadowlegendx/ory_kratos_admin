@@ -23,9 +23,15 @@ defmodule OryKratosAdminWeb.IdentityController do
     %{args | "page_size" => (if page_size > 32, do: 32, else: page_size)}
   end
 
+  defp parse_page_size(args),
+    do: Map.put(args, "page_size", 8)
+
   defp parse_page_number(%{"page_number" => page_number} = args) do
     page_number = String.to_integer(page_number)
 
     %{args | "page_number" => page_number}
   end
+
+  defp parse_page_number(args),
+    do: Map.put(args, "page_number", 0)
 end

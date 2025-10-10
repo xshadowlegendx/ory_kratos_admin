@@ -9,7 +9,7 @@ defmodule OryKratosAdminWeb.IdentityControllerTest do
 
   describe "index" do
     test "lists all identities", %{conn: conn} do
-      conn = get(conn, ~p"/api/identities?page_size=1&page_number=0")
+      conn = get(conn, ~p"/api/identities")
       assert ["0"] = get_resp_header(conn, "x-paging-total-count")
       assert json_response(conn, 200) == []
 
