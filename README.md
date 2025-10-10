@@ -5,19 +5,56 @@
   <img src="https://github.com/xshadowlegendx/ory_kratos_admin/actions/workflows/ci.yml/badge.svg"/>
 </p>
 
-To start your Phoenix server:
+Ory Kratos admin server alternative
 
-* Run `mix setup` to install and setup dependencies
-* Start Phoenix endpoint with `mix phx.server` or inside IEx with `iex -S mix phx.server`
+## Kubernetes deployment with Kustomization
+```yaml
+---
+# this is usually generated
+# ./ory-kratos-config.yml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ory-kratos-pg
+  namespace: default
+data:
+  username: cG9zdGdyZXM= # postgres
+  password: Y2hhbmdlbWU= # changeme
+```
 
-Now you can visit [`localhost:4000`](http://localhost:4000) from your browser.
+```yaml
+---
+# your kustomization.yml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
 
-Ready to run in production? Please [check our deployment guides](https://hexdocs.pm/phoenix/deployment.html).
+namespace: default
 
-## Learn more
+images:
+- name: ory-kratos-admin
+  newName: ghcr.io/xshadowlegendx/ory_kratos_admin
+  newTag: 0.1.1
 
-* Official website: https://www.phoenixframework.org/
-* Guides: https://hexdocs.pm/phoenix/overview.html
-* Docs: https://hexdocs.pm/phoenix
-* Forum: https://elixirforum.com/c/phoenix-forum
-* Source: https://github.com/phoenixframework/phoenix
+resources:
+# ory kratos admin expected database config
+# ensure it is properly provided via secret
+- ./ory-kratos-config.yml
+# install the ory kratos admin
+- https://github.com/xshadowlegendx/ory_kratos_admin.git//k8s?ref=0.1.1
+
+configMapGenerator:
+# config used by ory kratos admin
+# you can also change the config using
+# kustomize patches
+# for available config can check .env.example
+- name: ory-kratos-admin
+  behavior: merge
+  literals:
+  - DATABASE_NAME=ory_kratos
+  - DATABASE_HOST=ory-kratos-pg.default.svc.cluster.local
+
+secretGenerator:
+- name: ory-kratos-admin
+  literals:
+  - SECRET_KEY_BASE=9I9azA5xd1rIlVtS5FGpI+H9D1kni8sWe2KCglmcnq2HKfpavXMkC/720aK33laq
+```
