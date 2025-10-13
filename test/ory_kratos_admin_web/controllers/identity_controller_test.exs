@@ -58,7 +58,7 @@ defmodule OryKratosAdminWeb.IdentityControllerTest do
     test "list identites with metadata public filters", %{conn: conn} do
       %{identity: idx0} = create_identity(%{
         traits: %{idx: "sunge"},
-        metadata_public: %{lufi: %{fer: "abd"}}
+        metadata_public: %{lufi: %{fer: "abd", fa: 2}}
       })
 
       %{identity: _idx} = create_identity(%{
@@ -80,6 +80,11 @@ defmodule OryKratosAdminWeb.IdentityControllerTest do
       res = json_response(conn, 200)
       assert Enum.count(res) == 1
       assert res |> hd() |> Map.get("id") == idx1.id
+
+      conn = get(conn, ~p"/api/identities?metadata_public.has_key.0=lufi.fa")
+      res = json_response(conn, 200)
+      assert Enum.count(res) == 1
+      assert res |> hd() |> Map.get("id") == idx0.id
     end
   end
 
